@@ -14,8 +14,6 @@ points_number = int(final_voltage / step)
 
 
 potential_source.write('outp on')
-# potential_source.write('APPL 2')
-current_meter.query('meas:curr:dc?')
 
 potential_source.write('volt:step ' + str(step))
 
