@@ -1,0 +1,6 @@
+stabilization = 1
+final_voltage = 1.2
+initial_voltage = -0.1
+voltage_step = 0.01
+points_number = float((final_voltage + abs(initial_voltage) + 1) / voltage_step)
+scan_rate = 0.1
