@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import time
 import numpy as np
+from tqdm import tqdm
 
 
 def meas_potentials():
@@ -37,7 +38,7 @@ potential_source.write('outp on')
 current_values = []
 app_potential = []
 
-for n in list(range(0, len(meas_potentials()))):
+for n in tqdm(list(range(0, len(meas_potentials())))):
     potential_source.write('volt:offs ' + str(meas_potentials()[n]))
     time.sleep(step_speed)
     current_values.append(float(current_meter.query('meas:curr:dc?')))
