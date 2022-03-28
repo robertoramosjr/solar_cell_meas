@@ -13,7 +13,10 @@ def meas_potentials():
 
 def prepare_meter():
     current_meter.write('*rst; *cls')
+    current_meter.write('conf:curr:dc 10mA, 0.01mA')
     current_meter.write('func "curr:dc"')
+    current_meter.write('disp:state off')
+    current_meter.write('syst:beep:state off')
 
 
 def ask_voltage(voltage):
@@ -28,6 +31,10 @@ def ask_scan_direction():
     return temp_direction.lower()
 
 
+def ask_device_area():
+    return float(input('Qual a área do dispositivo em cm^2 ? \n'))
+
+
 def ask_meas_rate():
     return float(input('Qual a velocidade da medida em V/s? \n'))
 
@@ -39,7 +46,7 @@ def measurement():
     for n in tqdm(list(range(0, len(meas_potentials())))):
         potential_source.write('volt:offs ' + str((meas_potentials()[n] / 2)))
         time.sleep(step_speed)
-        temp_current_values.append(float(current_meter.query('meas:curr:dc?')))
+        temp_current_values.append(float(current_meter.query('meas:curr:dc? 10mA, 0.01mA')))
         temp_offset_potential.append((float(potential_source.query('volt:offs?'))))
     return temp_current_values, temp_offset_potential
 
@@ -54,9 +61,11 @@ final_voltage = ask_voltage('final')
 
 scan_rate = ask_meas_rate()
 
+device_area = ask_device_area()
+
 meas_direction = ask_scan_direction()
 
-voltage_step = 0.05
+voltage_step = 0.01
 
 points_number = float((final_voltage + abs(initial_voltage) + 1) / voltage_step)
 
@@ -67,24 +76,18 @@ potential_source.write('outp on')
 prepare_meter()
 
 current_values, offset_potential = measurement()
-# current_values = []
-# offset_potential = []
-#
-# for n in tqdm(list(range(0, len(meas_potentials())))):
-#     potential_source.write('volt:offs ' + str((meas_potentials()[n] / 2)))
-#     time.sleep(step_speed)
-#     current_values.append(float(current_meter.query('meas:curr:dc?')))
-#     offset_potential.append((float(potential_source.query('volt:offs?'))))
 
 potential_source.write('outp off')
 
 app_potential = [value * 2 for value in offset_potential]
 
+current_density = [value / device_area for value in current_values]
+
 plt.plot(app_potential, current_values, 'o')
 plt.show()
 
-output_data = pd.DataFrame([app_potential, current_values])\
+output_data = pd.DataFrame([app_potential, current_density])\
     .transpose()\
-    .set_axis(['Tensão (V)', 'Corrente (mA)'], axis=1)
+    .set_axis(['Voltage (V)', 'j (mA/cm2)'], axis=1)
 
 output_data.to_csv('C:/Users/robee/Desktop/j_v_tests.txt', sep='\t', index=False)
