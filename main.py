@@ -1,5 +1,7 @@
-import pyvisa
+
+import pyvisa as visa
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 import pandas as pd
 import time
 import numpy as np
@@ -42,16 +44,25 @@ def ask_meas_rate():
 def measurement():
     temp_current_values = []
     temp_offset_potential = []
+    temp_cell_power = []
 
     for n in tqdm(list(range(0, len(meas_potentials())))):
         potential_source.write('volt:offs ' + str((meas_potentials()[n] / 2)))
         time.sleep(step_speed)
         temp_current_values.append(float(current_meter.query('meas:curr:dc? 10mA, 0.01mA')))
         temp_offset_potential.append((float(potential_source.query('volt:offs?'))))
-    return temp_current_values, temp_offset_potential
+        temp_cell_power.append(
+                float(current_meter.query('meas:curr:dc? 10mA, 0.01mA')) *
+                float(potential_source.query('volt:offs?'))
+            )
+    return temp_current_values, temp_offset_potential, temp_cell_power
 
 
-rm = pyvisa.ResourceManager()
+def ask_file_name():
+    return input('Insira o caminho para salvar o arquivo e o nome do arquivo.')
+
+
+rm = visa.ResourceManager()
 potential_source = rm.open_resource('GPIB::10::INSTR')
 current_meter = rm.open_resource('USB0::0x0957::0x0618::MY50310013::0::INSTR')
 
@@ -65,29 +76,55 @@ device_area = ask_device_area()
 
 meas_direction = ask_scan_direction()
 
-voltage_step = 0.01
+incident_power = 100
+
+voltage_step = 0.02
 
 points_number = float((final_voltage + abs(initial_voltage) + 1) / voltage_step)
 
 step_speed = voltage_step / scan_rate
 
 
-potential_source.write('outp on')
+potential_source.write('outp on; disp off')
 prepare_meter()
 
-current_values, offset_potential = measurement()
-
+current_values, offset_potential, cell_power = measurement()
 potential_source.write('outp off')
+
+# ani = FuncAnimation(plt.gcf(), measurement, (int(step_speed*1000)))
+current_values_table = pd.Series(current_values).transpose()
 
 app_potential = [value * 2 for value in offset_potential]
 
-current_density = [value / device_area for value in current_values]
+current_density = [value * pow(base=10, exp=3) / device_area for value in current_values]
+
+output_data = pd.DataFrame([app_potential, current_density, cell_power])\
+    .transpose()\
+    .set_axis(['Voltage (V)', 'j (mA/cm2)', 'Cell Power (mW/cm2)'], axis=1)
+
+maximum_power_point = output_data['Cell Power (mW/cm2)'].max()
+
+short_circuit_current_index = output_data[output_data['Voltage (V)'] == 0.0].index.values
+short_circuit_current = output_data.loc[int(short_circuit_current_index), 'j (mA/cm2)']
+output_data['Jsc mA/cm2'] = short_circuit_current
+
+open_circuit_voltage_index = output_data[
+        output_data['j (mA/cm2)'] ==
+        output_data['j (mA/cm2)'].abs().min()
+    ]\
+    .index.values
+open_circuit_voltage = output_data.loc[int(open_circuit_voltage_index), 'Voltage (V)']
+output_data['Voc (V)'] = open_circuit_voltage
+
+fill_factor = (maximum_power_point * 100) / (open_circuit_voltage * short_circuit_current)
+output_data['FF (%)'] = fill_factor
+
+output_data['PCE'] = (fill_factor * open_circuit_voltage * short_circuit_current) / incident_power
 
 plt.plot(app_potential, current_values, 'o')
+plt.plot(app_potential, cell_power, 'r')
+plt.scatter(open_circuit_voltage, output_data['j (mA/cm2)'].abs().min())
+plt.scatter(0.0, short_circuit_current)
 plt.show()
 
-output_data = pd.DataFrame([app_potential, current_density])\
-    .transpose()\
-    .set_axis(['Voltage (V)', 'j (mA/cm2)'], axis=1)
-
-output_data.to_csv('C:/Users/robee/Desktop/j_v_tests.txt', sep='\t', index=False)
+output_data.to_csv(ask_file_name(), sep='\t', index=False)
