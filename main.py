@@ -62,6 +62,14 @@ def ask_file_name():
     return input('Insira o caminho para salvar o arquivo e o nome do arquivo.')
 
 
+def find_open_circuit_voltage():
+    if len(open_circuit_voltage_index) == 1:
+        value = output_data.loc[int(open_circuit_voltage_index), 'Voltage (V)']
+    else:
+        value = output_data.loc[int(open_circuit_voltage_index), 'Voltage (V)'].mean()
+    return value
+
+
 rm = visa.ResourceManager()
 potential_source = rm.open_resource('GPIB::10::INSTR')
 current_meter = rm.open_resource('USB0::0x0957::0x0618::MY50310013::0::INSTR')
@@ -106,25 +114,33 @@ maximum_power_point = output_data['Cell Power (mW/cm2)'].max()
 
 short_circuit_current_index = output_data[output_data['Voltage (V)'] == 0.0].index.values
 short_circuit_current = output_data.loc[int(short_circuit_current_index), 'j (mA/cm2)']
-output_data['Jsc mA/cm2'] = short_circuit_current
+cell_param = pd.DataFrame(short_circuit_current, index=['Jsc'])
+# output_data['Jsc mA/cm2'] = short_circuit_current
 
 open_circuit_voltage_index = output_data[
-        output_data['j (mA/cm2)'] ==
+        output_data['j (mA/cm2)'].abs() ==
         output_data['j (mA/cm2)'].abs().min()
     ]\
     .index.values
-open_circuit_voltage = output_data.loc[int(open_circuit_voltage_index), 'Voltage (V)']
-output_data['Voc (V)'] = open_circuit_voltage
+
+open_circuit_voltage = find_open_circuit_voltage()
+
+cell_param = cell_param.append(pd.DataFrame(open_circuit_voltage), ignore_index=True).set_axis('Voc', axis=0)
+# output_data['Voc (V)'] = open_circuit_voltage
 
 fill_factor = (maximum_power_point * 100) / (open_circuit_voltage * short_circuit_current)
-output_data['FF (%)'] = fill_factor
+cell_param = cell_param.append(pd.DataFrame(fill_factor), ignore_index=True).set_axis('FF (%)', axis=0)
+# output_data['FF (%)'] = fill_factor
 
-output_data['PCE'] = (fill_factor * open_circuit_voltage * short_circuit_current) / incident_power
+power_conversion_efficiency = (fill_factor * open_circuit_voltage * short_circuit_current) / incident_power
+cell_param = cell_param.append(pd.DataFrame(power_conversion_efficiency), ignore_index=True).set_axis('PCE', axis=0)
 
 plt.plot(app_potential, current_values, 'o')
 plt.plot(app_potential, cell_power, 'r')
 plt.scatter(open_circuit_voltage, output_data['j (mA/cm2)'].abs().min())
 plt.scatter(0.0, short_circuit_current)
 plt.show()
+
+output_data = pd.concat([cell_param, output_data], ignore_index=True)
 
 output_data.to_csv(ask_file_name(), sep='\t', index=False)

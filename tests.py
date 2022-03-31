@@ -19,11 +19,8 @@ print(open_circuit_voltage)
 
 i_v['Jsc'] = short_circuit_current
 
-print(i_v)
-
 plt.plot(array_v[0], array_i[0])
 plt.plot(i_v['Voltage (V)'], i_v['cell power mW'], 'r')
 plt.scatter(open_circuit_voltage, i_v['j (mA/cm2)'].abs().min())
 plt.scatter(0.0, short_circuit_current)
 plt.show()
-
