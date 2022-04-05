@@ -48,7 +48,7 @@ def measurement():
 
     for n in tqdm(list(range(0, len(meas_potentials())))):
         potential_source.write('volt:offs ' + str((meas_potentials()[n] / 2)))
-        time.sleep(step_speed)
+        time.sleep(0.05)
         temp_current_values.append(float(current_meter.query('meas:curr:dc? 10mA, 0.01mA')))
         temp_offset_potential.append((float(potential_source.query('volt:offs?'))))
         temp_cell_power.append(
@@ -71,7 +71,7 @@ def find_open_circuit_voltage():
 
 
 rm = visa.ResourceManager()
-potential_source = rm.open_resource('GPIB::10::INSTR')
+potential_source = rm.open_resource('GPIB0::10::INSTR')
 current_meter = rm.open_resource('USB0::0x0957::0x0618::MY50310013::0::INSTR')
 
 initial_voltage = ask_voltage('inicial')
@@ -86,7 +86,7 @@ meas_direction = ask_scan_direction()
 
 incident_power = 100
 
-voltage_step = 0.02
+voltage_step = 0.01
 
 points_number = float((final_voltage + abs(initial_voltage) + 1) / voltage_step)
 
@@ -97,6 +97,7 @@ potential_source.write('outp on; disp off')
 prepare_meter()
 
 current_values, offset_potential, cell_power = measurement()
+
 potential_source.write('outp off')
 
 # ani = FuncAnimation(plt.gcf(), measurement, (int(step_speed*1000)))
@@ -104,7 +105,9 @@ current_values_table = pd.Series(current_values).transpose()
 
 app_potential = [value * 2 for value in offset_potential]
 
-current_density = [value * pow(base=10, exp=3) / device_area for value in current_values]
+current_density = [-1 * value * pow(base=10, exp=3) / device_area for value in current_values]
+
+cell_power = [-1 * value * pow(base=10, exp=3) / device_area for value in cell_power]
 
 output_data = pd.DataFrame([app_potential, current_density, cell_power])\
     .transpose()\
@@ -114,8 +117,6 @@ maximum_power_point = output_data['Cell Power (mW/cm2)'].max()
 
 short_circuit_current_index = output_data[output_data['Voltage (V)'] == 0.0].index.values
 short_circuit_current = output_data.loc[int(short_circuit_current_index), 'j (mA/cm2)']
-cell_param = pd.DataFrame(short_circuit_current, index=['Jsc'])
-# output_data['Jsc mA/cm2'] = short_circuit_current
 
 open_circuit_voltage_index = output_data[
         output_data['j (mA/cm2)'].abs() ==
@@ -125,22 +126,28 @@ open_circuit_voltage_index = output_data[
 
 open_circuit_voltage = find_open_circuit_voltage()
 
-cell_param = cell_param.append(pd.DataFrame(open_circuit_voltage), ignore_index=True).set_axis('Voc', axis=0)
-# output_data['Voc (V)'] = open_circuit_voltage
-
 fill_factor = (maximum_power_point * 100) / (open_circuit_voltage * short_circuit_current)
-cell_param = cell_param.append(pd.DataFrame(fill_factor), ignore_index=True).set_axis('FF (%)', axis=0)
-# output_data['FF (%)'] = fill_factor
 
 power_conversion_efficiency = (fill_factor * open_circuit_voltage * short_circuit_current) / incident_power
-cell_param = cell_param.append(pd.DataFrame(power_conversion_efficiency), ignore_index=True).set_axis('PCE', axis=0)
+cell_params = pd.DataFrame(
+    [
+        short_circuit_current,
+        open_circuit_voltage,
+        fill_factor,
+        power_conversion_efficiency
+    ],
+    index=[
+        'Jsc (mA/cm2)', 'Voc (V)', 'FF (%)', 'PCE (%)'
+    ],
+    columns=['Cell Parameters']
+    )
+output_data = cell_params.append(output_data, sort=True)
 
-plt.plot(app_potential, current_values, 'o')
-plt.plot(app_potential, cell_power, 'r')
-plt.scatter(open_circuit_voltage, output_data['j (mA/cm2)'].abs().min())
+plt.plot(output_data['Voltage (V)'], output_data['j (mA/cm2)'])
+plt.plot(output_data['Voltage (V)'], output_data['Cell Power (mW/cm2)'], 'r')
+plt.scatter(open_circuit_voltage, output_data.loc['j (mA/cm2)', 'Cell Parameters'].abs().min())
 plt.scatter(0.0, short_circuit_current)
 plt.show()
 
-output_data = pd.concat([cell_param, output_data], ignore_index=True)
-
-output_data.to_csv(ask_file_name(), sep='\t', index=False)
+output_data = cell_params.append(output_data, sort=True)
+output_data.to_csv(ask_file_name(), sep='\t')
